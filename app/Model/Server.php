@@ -919,16 +919,16 @@ class Server extends AppModel
         $filterRules['minimal'] = 1;
         $filterRules['published'] = 1;
 
-        // Fetch event index from cache if exists and is not modified
+        // Fetch event index from cache if exists and is not modified on server
         $redis = RedisTool::init();
         $indexFromCache = $redis->get("misp:event_index_cache:{$serverSync->serverId()}");
         if ($indexFromCache) {
             $etagPos = strpos($indexFromCache, "\n");
             if ($etagPos === false) {
-                throw new RuntimeException("Could not find etag in cache fro server {$serverSync->serverId()}");
+                throw new RuntimeException("Could not find etag in cache for server {$serverSync->serverId()}");
             }
             $etag = substr($indexFromCache, 0, $etagPos);
-            $serverSync->debug("Event index loaded from Redis cache with etag $etag containing");
+            $serverSync->debug("Event index loaded from Redis cache with etag $etag");
         } else {
             $etag = '""';  // Provide empty ETag, so MISP will compute ETag for returned data
         }
@@ -2581,7 +2581,7 @@ class Server extends AppModel
             'debug', 'MISP', 'GnuPG', 'SMIME', 'Proxy', 'SecureAuth',
             'Security', 'Session', 'site_admin_debug', 'Plugin', 'CertAuth',
             'ApacheShibbAuth', 'ApacheSecureAuth', 'OidcAuth', 'AadAuth',
-            'SimpleBackgroundJobs', 'LinOTPAuth'
+            'SimpleBackgroundJobs', 'LinOTPAuth', 'LdapAuth'
         );
         $settingsArray = array();
         foreach ($settingsToSave as $setting) {
@@ -3451,7 +3451,7 @@ class Server extends AppModel
 
     public function writeableDirsDiagnostics(&$diagnostic_errors)
     {
-        $writeableDirs = array(
+        $writeableDirs = [
             '/tmp' => 0,
             APP . 'tmp' => 0,
             APP . 'files' => 0,
@@ -3467,11 +3467,14 @@ class Server extends AppModel
             APP . 'tmp' . DS . 'files' => 0,
             APP . 'tmp' . DS . 'logs' => 0,
             APP . 'tmp' . DS . 'bro' => 0,
-        );
+        ];
 
         $attachmentDir = Configure::read('MISP.attachments_dir');
         if ($attachmentDir && !isset($writeableDirs[$attachmentDir])) {
-            $writeableDirs[$attachmentDir] = 0;
+            unset($writeableDirs[APP . 'files']);
+            if (!str_starts_with($attachmentDir, 's3://')) {
+                $writeableDirs[$attachmentDir] = 0;
+            }
         }
 
         $tmpDir = Configure::read('MISP.tmpdir');
@@ -3799,13 +3802,16 @@ class Server extends AppModel
             }
             $entry = $worker['type'] === 'regular' ? $worker['queue'] : $worker['type'];
             $correctUser = ($currentUser === $worker['user']);
+            if ($worker['user'] === '') {
+                $correctUser = 'unknown';
+            }
             if ($procAccessible) {
                 $alive = $correctUser && file_exists("/proc/$pid");
             } else {
                 $alive = 'N/A';
             }
             $ok = true;
-            if (!$alive || !$correctUser) {
+            if (!$alive || $correctUser === false) {
                 $ok = false;
                 $workerIssueCount++;
             }
@@ -4258,12 +4264,40 @@ class Server extends AppModel
             return false;
         }
         // find the latest version tag in the v[major].[minor].[hotfix] format
+        $latest_versions = [];
         foreach ($tags as $tag) {
             if (preg_match('/^v[0-9]+\.[0-9]+\.[0-9]+$/', $tag['name'])) {
-                return $this->checkVersion($tag['name']);
+                $tagname = substr($tag['name'], 1);
+                $tagname = explode('.', $tagname);
+                if (!isset($latest_versions[$tagname[0]][$tagname[1]])) {
+                    $latest_versions[$tagname[0]][$tagname[1]] = $tagname[2];
+                } elseif (version_compare($tag['name'], $latest_versions[$tagname[0]][$tagname[1]]) === 1) {
+                    $latest_versions[$tagname[0]][$tagname[1]] = $tagname[2];
+                }    
             }
         }
-        return false;
+        $version_array = $this->checkMISPVersion();
+        $current = implode('.', $version_array);
+        $latest_version_string = sprintf('v%s.%s.%s', $version_array['major'], $version_array['minor'], $latest_versions[$version_array['major']][$version_array['minor']]);
+        $latest_major = 0;
+        $latest_minor = 0;
+        foreach ($latest_versions as $major => $minor) {
+            if ($major > $latest_major) {
+                $latest_major = $major;
+            }
+        }
+        foreach ($latest_versions[$major] as $minor => $hotfix) {
+            if ($minor > $latest_minor) {
+                $latest_minor = $minor;
+            }
+        }
+        $result = $this->checkVersion($latest_version_string);
+        if ($latest_major > $version_array['major']) {
+            $result['new_major'] = $latest_major;
+        } else if ($latest_minor > $version_array['minor']) {
+            $result['new_minor'] = $latest_major . '.' . $latest_minor;
+        }
+        return $result;
     }
 
     /**
@@ -5579,7 +5613,7 @@ class Server extends AppModel
                 ],
                 'default_event_distribution' => array(
                     'level' => 0,
-                    'description' => __('The default distribution setting for events (0-3).'),
+                    'description' => __('The default distribution setting for events (0-4).'),
                     'value' => '',
                     'test' => 'testForEmpty',
                     'type' => 'string',
@@ -5587,7 +5621,8 @@ class Server extends AppModel
                         '0' => __('Your organisation only'),
                         '1' => __('This community only'),
                         '2' => __('Connected communities'),
-                        '3' => __('All communities')
+                        '3' => __('All communities'),
+                        '4' => __('Sharing Group'),
                     ],
                 ),
                 'default_attribute_distribution' => array(
@@ -5621,6 +5656,34 @@ class Server extends AppModel
                     'optionsSource' => function () {
                         return $this->loadTagCollections();
                     }
+                ),
+                'default_object_distribution' => array(
+                    'level' => 1,
+                    'description' => __('The default distribution setting for objects, set it to \'event\' if you would like the objects to default to the event distribution level. (0-3 or "event")'),
+                    'value' => 'event',
+                    'test' => 'testForEmpty',
+                    'type' => 'string',
+                    'options' => array(
+                        '0' => __('Your organisation only'),
+                        '1' => __('This community only'),
+                        '2' => __('Connected communities'),
+                        '3' => __('All communities'),
+                        'event' => __('Inherit from event')
+                    ),
+                ),
+                'default_eventreport_distribution' => array(
+                    'level' => 1,
+                    'description' => __('The default distribution setting for event-reports, set it to \'event\' if you would like the event-reports to default to the event distribution level. (0-3 or "event")'),
+                    'value' => 'event',
+                    'test' => 'testForEmpty',
+                    'type' => 'string',
+                    'options' => array(
+                        '0' => __('Your organisation only'),
+                        '1' => __('This community only'),
+                        '2' => __('Connected communities'),
+                        '3' => __('All communities'),
+                        'event' => __('Inherit from event')
+                    ),
                 ),
                 'default_publish_alert' => array(
                     'level' => 0,
@@ -5692,6 +5755,13 @@ class Server extends AppModel
                     'level' => 2,
                     'description' => __('Allows users to take ownership of an event uploaded via the "Add MISP XML" button. This allows spoofing the creator of a manually imported event, also breaking possibly breaking the original intended releasability. Synchronising with an instance that has a different creator for the same event can lead to unwanted consequences.'),
                     'value' => '',
+                    'test' => 'testBool',
+                    'type' => 'boolean',
+                ),
+                'allow_users_override_locked_field_when_importing_events' => array(
+                    'level' => 2,
+                    'description' => __('Allows users to override the state of the `locked` field of an event uploaded via the "Import from MISP Export File" functionality. This allows unlocking manually imported event. Updates to these Events coming from synchronisation might be rejected since it will appear as these Events were originaly created on this instance.'),
+                    'value' => false,
                     'test' => 'testBool',
                     'type' => 'boolean',
                 ),
@@ -5939,6 +6009,14 @@ class Server extends AppModel
                 'showEventReportCountOnIndex' => array(
                     'level' => 1,
                     'description' => __('When enabled, the aggregate number of event reports for the event becomes visible to the currently logged in user on the event index UI.'),
+                    'value' => false,
+                    'test' => 'testBool',
+                    'type' => 'boolean',
+                    'null' => true
+                ),
+                'enableEventReportImageParsingRule' => array(
+                    'level' => 1,
+                    'description' => __('When enabled, Image parsing rule will be enabled and picture will be displayed in the rendered markdown. Even though the Content Security Policy directive might block pictures from outside, be carefull with that setting.'),
                     'value' => false,
                     'test' => 'testBool',
                     'type' => 'boolean',
@@ -6249,6 +6327,14 @@ class Server extends AppModel
                     'level' => self::SETTING_RECOMMENDED,
                     'description' => __('Enable warning list triggers regardless of the IDS flag value.'),
                     'value' => false,
+                    'test' => 'testBool',
+                    'type' => 'boolean',
+                    'null' => true
+                ],
+                'hide_unkown_cluster' => [
+                    'level' => self::SETTING_RECOMMENDED,
+                    'description' => __('This will hide unknown cluster to all users expect those having the sync permission.'),
+                    'value' => true,
                     'test' => 'testBool',
                     'type' => 'boolean',
                     'null' => true

@@ -495,7 +495,7 @@ class UsersController extends AppController
                 unset($users[$key]['User']['totp']);
                 if (!empty(Configure::read('Security.advanced_authkeys'))) { // There is no point to show that authkey since it doesn't work when this setting is active
                     unset($users[$key]['User']['authkey']);
-                } else if ((!empty($user['Role']['perm_admin']) && $user['User']['id'] != $this->Auth->user('id'))) {
+                } else if (!$this->_isSiteAdmin() && !empty($user['Role']['perm_admin']) && $user['User']['id'] != $this->Auth->user('id')) {
                     $users[$key]['User']['authkey'] = __('Redacted');
                 }
             }
@@ -2405,7 +2405,7 @@ class UsersController extends AppController
 
         // No need for restSearch or result is empty
         if ($rest_response_empty) {
-            $matrixData = $this->Galaxy->getMatrix($galaxy_id);
+            $matrixData = $this->Galaxy->getMatrix($user, $galaxy_id);
             $tabs = $matrixData['tabs'];
             $matrixTags = $matrixData['matrixTags'];
             $killChainOrders = $matrixData['killChain'];
@@ -2481,13 +2481,13 @@ class UsersController extends AppController
             }
             $this->set('pickingMode', false);
             if ($matrixData['galaxy']['id'] == $mitre_galaxy_id) {
-                $this->set('defaultTabName', "mitre-attack");
+                $this->set('defaultTabName', "attack-enterprise");
                 $this->set('removeTrailling', 2);
             }
 
             $this->set('galaxyName', $matrixData['galaxy']['name']);
             $this->set('galaxyId', $matrixData['galaxy']['id']);
-            $matrixGalaxies = $this->Galaxy->getAllowedMatrixGalaxies();
+            $matrixGalaxies = $this->Galaxy->getAllowedMatrixGalaxies($this->Auth->user());
             $this->set('matrixGalaxies', $matrixGalaxies);
         }
         $this->render('statistics_galaxymatrix');
