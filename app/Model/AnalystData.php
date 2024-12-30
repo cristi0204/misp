@@ -383,6 +383,10 @@ class AnalystData extends AppModel
 
     public function fetchChildNotesAndOpinions(array $user, array $analystData, $isRest = true, $depth = 2): array
     {
+        if (!isset($analystData['uuid'])) {
+            throw new InvalidArgumentException("Invalid analyst data provided, uuid field not found.");
+        }
+
         if ($depth == 0 || !empty($this->fetchedUUIDFromRecursion[$analystData['uuid']])) {
             $hasMoreNotesOrOpinions =  $this->hasMoreNotesOrOpinions($analystData, $user);
             $analystData['_max_depth_reached'] = $hasMoreNotesOrOpinions;
