@@ -33,8 +33,8 @@ class AppController extends Controller
 
     public $helpers = array('OrgImg', 'FontAwesome', 'UserName');
 
-    private $__queryVersion = '168';
-    public $pyMispVersion = '2.5.2';
+    private $__queryVersion = '169';
+    public $pyMispVersion = '2.5.4';
     public $phpmin = '7.2';
     public $phprec = '7.4';
     public $phptoonew = '8.0';
@@ -115,7 +115,8 @@ class AppController extends Controller
 
         // Set the baseurl for redirects
         $baseurl = empty(Configure::read('MISP.baseurl')) ? null : Configure::read('MISP.baseurl');
-        if (!empty($baseurl)) {
+
+        if (!empty($baseurl) && empty(Configure::read('MISP.disable_baseurl_coercion'))) {
             Configure::write('App.fullBaseUrl', $baseurl);
             Router::fullBaseUrl($baseurl);
         }
@@ -1042,6 +1043,9 @@ class AppController extends Controller
             if (!in_array('limit', $options['paramArray'])) {
                 $options['paramArray'][] = 'limit';
             }
+            if (!in_array('sign', $options['paramArray'])) {
+                $options['paramArray'][] = 'sign';
+            }
         }
         $request = $options['request'] ?? $this->request;
         if ($request->is('post')) {
@@ -1430,6 +1434,9 @@ class AppController extends Controller
             $this->set($final);
             $this->render('/Events/module_views/' . $renderView);
         } else {
+            if (!empty($filters['sign'])) {
+                $this->RestResponse->signContents = true;
+            }
             $filename = $this->RestSearch->getFilename($filters, $scope, $responseType);
             $headers = ['X-Result-Count' => $elementCounter, 'X-Export-Module-Used' => $returnFormat, 'X-Response-Format' => $responseType, 'X-Skipped-Elements-Count' => $skippedElementsCounter];
             return $this->RestResponse->viewData($final, $responseType, false, true, $filename, $headers);

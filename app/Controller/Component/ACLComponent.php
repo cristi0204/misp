@@ -54,7 +54,7 @@ class ACLComponent extends Component
             'attributeStatistics' => array('*'),
             'bro' => array('*'),
             'checkAttachments' => array(),
-            'checkComposites' => array('perm_admin'),
+            'checkComposites' => array('perm_site_admin'),
             'checkOrphanedAttributes' => array(),
             'delete' => array('perm_add'),
             'deleteSelected' => array('perm_add'),
@@ -160,6 +160,7 @@ class ACLComponent extends Component
             'add' => ['perm_add'],
             'delete' => ['perm_add'],
             'index' => ['*'],
+            'serverSign' => ['perm_server_sign'],
             'view' => ['*']
         ],
         'dashboards' => array(
@@ -250,11 +251,11 @@ class ACLComponent extends Component
             'restore' => array('perm_add'),
             'index' => array('*'),
             'getProxyMISPElements' => array('*'),
-            'extractAllFromReport' => array('*'),
-            'extractFromReport' => array('*'),
+            'extractAllFromReport' => array('perm_add'),
+            'extractFromReport' => array('perm_add'),
             'replaceSuggestionInReport' => array('*'),
-            'importReportFromUrl' => array('*'),
-            'sendToLLM' => ['*'],
+            'importReportFromUrl' => array('perm_add'),
+            'sendToLLM' => ['perm_add'],
             'configureTemplateVariable' => ['perm_add'],
             'downloadAsPDF' => ['*'],
             'addTag' => ['perm_tagger'],
@@ -454,7 +455,7 @@ class ACLComponent extends Component
         ),
         'logs' => array(
             'admin_index' => array('perm_audit'),
-            'admin_search' => array('perm_audit'),
+            'search' => array('perm_audit'),
             'event_index' => array('*'),
             'returnDates' => array('*'),
             'testForStolenAttributes' => array(),
@@ -521,8 +522,6 @@ class ACLComponent extends Component
         ),
         'objectTemplates' => array(
             'activate' => array(),
-            'add' => array('perm_object_template'),
-            'edit' => array('perm_object_template'),
             'delete' => array('perm_object_template'),
             'getToggleField' => array(),
             'getRaw' => array('perm_object_template'),
@@ -629,6 +628,7 @@ class ACLComponent extends Component
             'serverSettings' => array(),
             'serverSettingsEdit' => array(),
             'serverSettingsReloadSetting' => array(),
+            'serverSign' => ['perm_server_sign'],
             'startWorker' => array(),
             'startZeroMQServer' => array(),
             'statusZeroMQServer' => array(),
@@ -826,7 +826,6 @@ class ACLComponent extends Component
             'checkAndCorrectPgps' => array(),
             'checkIfLoggedIn' => array('*'),
             'dashboard' => array('*'),
-            'delete' => array('perm_admin'),
             'discardRegistrations' => array(),
             'downloadTerms' => array('*'),
             'edit' => array('self_management_enabled'),
@@ -1159,7 +1158,7 @@ class ACLComponent extends Component
     public function canModifyGalaxyCluster(array $user, array $cluster)
     {
         if (!isset($cluster['GalaxyCluster'])) {
-            throw new InvalidArgumentException('Passed object does not contain an GalaxyCluster.');
+            throw new InvalidArgumentException('Passed object does not contain a GalaxyCluster.');
         }
         if ($cluster['GalaxyCluster']['default']) {
             return false; // it is not possible to edit default clusters
@@ -1183,7 +1182,7 @@ class ACLComponent extends Component
     public function canModifyGalaxy(array $user, array $galaxy)
     {
         if (!isset($galaxy['Galaxy'])) {
-            throw new InvalidArgumentException('Passed object does not contain an Galaxy.');
+            throw new InvalidArgumentException('Passed object does not contain a Galaxy.');
         }
         if ($galaxy['Galaxy']['default']) {
             return false; // it is not possible to edit default clusters

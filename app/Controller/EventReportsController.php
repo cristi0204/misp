@@ -184,7 +184,10 @@ class EventReportsController extends AppController
             if ($id === false) {
                 throw new NotFoundException(__('Invalid report'));
             }
-            $report = $this->EventReport->fetchIfAuthorized($this->Auth->user(), $id, 'edit', $throwErrors=true, $full=false);
+            $report = $this->EventReport->fetchIfAuthorized($this->Auth->user(), $id, 'view', $throwErrors=true, $full=false);
+            if (!$this->__canModifyTag($report, $local)) {
+                return new CakeResponse(array('body'=> json_encode(array('saved' => false, 'errors' => 'You don\'t have permission to do that.')), 'status'=>200, 'type' => 'json'));
+            }
             $this->set('local', $local);
             $this->set('object_id', $id);
             $this->set('scope', 'EventReport');
@@ -192,7 +195,10 @@ class EventReportsController extends AppController
             $this->autoRender = false;
             $this->render('/Events/add_tag');
         } else {
-            $report = $this->EventReport->fetchIfAuthorized($this->Auth->user(), $id, 'edit', $throwErrors=true, $full=false);
+            $report = $this->EventReport->fetchIfAuthorized($this->Auth->user(), $id, 'view', $throwErrors=true, $full=false);
+            if (!$this->__canModifyTag($report, $local)) {
+                return new CakeResponse(array('body'=> json_encode(array('saved' => false, 'errors' => 'You don\'t have permission to do that.')), 'status'=>200, 'type' => 'json'));
+            }
             if ($tag_id === false) {
                 if (!isset($this->request->data['EventReport']['tag'])) {
                     throw new NotFoundException(__('Invalid tag'));
@@ -256,7 +262,7 @@ class EventReportsController extends AppController
 
     public function removeTag($id = false, $tag_id = false, $galaxy = false)
     {
-        $report = $this->EventReport->fetchIfAuthorized($this->Auth->user(), $id, 'edit', true, false);
+        $report = $this->EventReport->fetchIfAuthorized($this->Auth->user(), $id, 'view', $throwErrors=true, $full=false);
         if (!$this->request->is('post')) {
             $reportTag = $this->EventReport->EventReportTag->find('first', array(
                 'conditions' => array(
@@ -477,7 +483,12 @@ class EventReportsController extends AppController
         if (!$this->request->is('ajax') && !$this->_isRest()) {
             throw new MethodNotAllowedException(__('This function can only be reached via AJAX and via the API.'));
         }
-        $fetcherModule = $this->EventReport->isFetchURLModuleEnabled();
+
+        // throws exception if the user can't modify it
+        $this->__canModifyReport($event_id);
+        
+        $errors = [];
+        $fetcherModules = $this->EventReport->getEnabledFetchURLModules($this->Auth->user());
         if ($this->request->is('post')) {
             if (empty($this->data['EventReport'])) {
                 $this->data = ['EventReport' => $this->data];
@@ -494,29 +505,31 @@ class EventReportsController extends AppController
                     $format = $parsed_format;
                 }
             }
-            $content = $this->EventReport->downloadMarkdownFromURL($event_id, $url, $format);
-
-            $errors = [];
-            if (!empty($content)) {
-                $report = [
-                    'name' => __('Report from - %s (%s)', $url, time()),
-                    'distribution' => 5,
-                    'content' => $content
-                ];
-                $errors = $this->EventReport->addReport($this->Auth->user(), $report, $event_id);
-            } else {
-                $errors[] = __('Could not fetch report from URL. Fetcher module not enabled or could not download the page');
+            $content = null;
+            if (empty($errors)) {
+                $content = $this->EventReport->downloadMarkdownFromURL($this->Auth->user(), $event_id, $url, $format);
+                if (!empty($content)) {
+                    $report = [
+                        'name' => __('Report from - %s (%s)', $url, time()),
+                        'distribution' => 5,
+                        'content' => $content
+                    ];
+                    $errors = $this->EventReport->addReport($this->Auth->user(), $report, $event_id);
+                } else {
+                    $errors[] = __('Could not fetch report from URL. Fetcher module not enabled or could not download the page');
+                }
             }
             $redirectTarget = array('controller' => 'events', 'action' => 'view', $event_id);
             if (!empty($errors)) {
-                return $this->__getFailResponseBasedOnContext($errors, array(), 'addFromURL', $this->EventReport->id, $redirectTarget);
+                $event_report_id = empty($this->EventReport->id) ? 0 : $this->EventReport->id;
+                return $this->__getFailResponseBasedOnContext($errors, array(), 'addFromURL', $event_report_id, $redirectTarget);
             } else {
                 $successMessage = __('Report downloaded and created');
                 $report = $this->EventReport->simpleFetchById($this->Auth->user(), $this->EventReport->id);
                 return $this->__getSuccessResponseBasedOnContext($successMessage, $report, 'addFromURL', false, $redirectTarget);
             }
         }
-        $this->set('importModuleEnabled', is_array($fetcherModule));
+        $this->set('importModuleEnabled', !empty($fetcherModules));
         $this->set('event_id', $event_id);
         $this->layout = false;
         $this->render('ajax/importReportFromUrl');
@@ -677,10 +690,10 @@ class EventReportsController extends AppController
         if ($this->request->is('post')) {
             $errors = $this->EventReport->setFileAlias($this->request->data['EventReport']);
             if (empty($errors)) {
-                $successMessage = __('Success settings alias');
+                $successMessage = __('Alias set successfully');
                 return $this->__getSuccessResponseBasedOnContext($successMessage, [], 'setFileAlias', $this->request->data['EventReport']['filename']);
             } else {
-                $errorMessage = __('Error while settings alias. Reasons: ' . implode(',', $errors));
+                $errorMessage = __('Error while setting alias. Reasons: ' . implode(',', $errors));
                 return $this->__getFailResponseBasedOnContext($errorMessage, [], 'setFileAlias', $this->request->data['EventReport']['filename']);
             }
         }
