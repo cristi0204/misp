@@ -701,10 +701,10 @@ class GalaxyClustersController extends AppController
         }
 
         $cluster = $this->GalaxyCluster->fetchGalaxyClusters($this->Auth->user(), array(
-            'conditions' => array('id' => $id)
+            'conditions' => array('GalaxyCluster.id' => $id)
         ), $full=false);
         if (empty($cluster)) {
-            throw new MethodNotAllowedException("Invalid Galaxy Cluster.");
+            throw new NotFoundException("Invalid Galaxy Cluster.");
         }
         $cluster = $cluster[0];
         $this->loadModel('Event');
@@ -712,7 +712,7 @@ class GalaxyClustersController extends AppController
         if ($mitreAttackGalaxyId == 0) { // Mitre Att&ck galaxy not found
             return new CakeResponse(array('body' => '', 'status' => 200, 'type' => 'text'));
         }
-        $attackPatternTagNames = $this->GalaxyCluster->find('list', array(
+        $attackPatternTagNames = $this->GalaxyCluster->find('column', array(
             'conditions' => array('galaxy_id' => $mitreAttackGalaxyId),
             'fields' => array('tag_name')
         ));
@@ -721,7 +721,7 @@ class GalaxyClustersController extends AppController
         $tag_name = $cluster['tag_name'];
 
         // fetch all event ids having the requested cluster
-        $eventIds = $this->Event->EventTag->find('list', array(
+        $eventIds = $this->Event->EventTag->find('column', array(
             'contain' => array('Tag'),
             'conditions' => array(
                 'Tag.name' => $tag_name
