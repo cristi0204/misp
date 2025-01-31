@@ -35,7 +35,8 @@ class Oidc
 
         $this->log($mispUsername, "Trying login.");
 
-        $sub = $claims->sub; // sub is required
+        // $sub = $claims->sub; // sub is required
+        $sub = $claims->preferred_username; // sub is required
 
         // Try to find user by `sub` field, that is unique
         $user = $this->_findUser($settings, ['User.sub' => $sub]);
